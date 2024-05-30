@@ -196,14 +196,10 @@ class ReactAgent:
 
     def prompt_agent(self) -> str:
         while True:
-            try:
-                self.llm.add_message("user", self._build_agent_prompt())
-                response = self.llm.send_query()
-                request = response['choices'][0]['message']['content']
-                return request
-            except Exception as e:
-                print(f"Error occurred: {e}")
-                time.sleep(5)
+            self.llm.add_message("user", self._build_agent_prompt())
+            response = self.llm.send_query()
+            request = response['choices'][0]['message']['content']
+            return request
 
     def _build_agent_prompt(self) -> str:
         if self.mode == "zero_shot":
