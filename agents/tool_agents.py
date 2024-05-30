@@ -198,6 +198,7 @@ class ReactAgent:
         while True:
             self.llm.add_message("user", self._build_agent_prompt())
             response = self.llm.send_query()
+            print(response)
             request = response['choices'][0]['message']['content']
             return request
 
