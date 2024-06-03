@@ -38,7 +38,7 @@ class DateError(Exception):
 class Llama3:
     def __init__(self,
                  llama_url="http://localhost:11434/api/chat",
-                 model="llama3",
+                 model="llama3:instruct",
                  stream=False,
                  output="./test_output.json",
                  messages=[]):
@@ -75,8 +75,8 @@ class ReactAgent:
                  max_steps: int = 30,
                  max_retries: int = 3,
                  illegal_early_stop_patience: int = 3,
-                 react_llm_name='llama3',
-                 planner_llm_name='llama3',
+                 react_llm_name='llama3:instruct',
+                 planner_llm_name='llama3:instruct',
                  city_file_path='../database/background/citySet.txt',
                  agent_prompt=zeroshot_react_agent_prompt) -> None:
 
@@ -138,6 +138,8 @@ class ReactAgent:
             self.last_actions.clear()
 
         self.last_actions.append(action)
+
+        ## NEED TO UPDATE
         self.json_log[-1]['action'] = self.scratchpad.split('\n')[-1].replace(f'\nAction {self.step_n}:', "")
 
         if len(self.last_actions) == 3:
@@ -198,8 +200,11 @@ class ReactAgent:
         while True:
             self.llm.add_message("user", self._build_agent_prompt())
             response = self.llm.send_query()
+            # print(self.llm.messages)lam
             print(response)
-            request = response['choices'][0]['message']['content']
+            request = response['message']['content']
+            print("\n\n" + repr(f"llama3 response: {request}") + "\n\n")
+            self.llm.add_message("assistant", request)
             return request
 
     def _build_agent_prompt(self) -> str:
@@ -250,7 +255,7 @@ class ReactAgent:
 
     def parse_action(self, string: str):
         pattern = r'^(\w+)\[(.+)\]$'
-        match = re.match(pattern, string)
+        match = re.search(pattern, string, re.M)
         if match:
             action_type = match.group(1)
             action_arg = match.group(2)
@@ -258,6 +263,7 @@ class ReactAgent:
         return None, None
 
     def handle_action(self, action_type: str, action_arg: str) -> None:
+        print(action_type)
         if action_type == 'FlightSearch':
             try:
                 if validate_date_format(action_arg.split(', ')[2]) and validate_city_format(action_arg.split(', ')[0], self.city_set) and validate_city_format(action_arg.split(', ')[1], self.city_set):
@@ -431,7 +437,7 @@ if __name__ == '__main__':
     tools_list = ["notebook", "flights", "attractions", "accommodations", "restaurants", "googleDistanceMatrix", "planner", "cities"]
     parser = argparse.ArgumentParser()
     parser.add_argument("--set_type", type=str, default="validation")
-    parser.add_argument("--model_name", type=str, default="llama3")
+    parser.add_argument("--model_name", type=str, default="llama3:instruct")
     parser.add_argument("--output_dir", type=str, default="./")
     args = parser.parse_args()
 
@@ -444,11 +450,11 @@ if __name__ == '__main__':
     numbers = [i for i in range(1, len(query_data_list) + 1)]
     agent = ReactAgent(None, tools=tools_list, max_steps=30, react_llm_name=args.model_name, planner_llm_name=args.model_name)
 
-    for number in tqdm(numbers[:]):
+    for number in tqdm(numbers[:5]):
         query = query_data_list[number - 1]['query']
 
-        if not os.path.exists(os.path.join(f'{args.output_dir}/{args.set_type}')):
-            os.makedirs(os.path.join(f'{args.output_dir}/{args.set_type}'))
+        if not os.path.exists(os.path.join(f'{args.output_dir}{args.set_type}')):
+            os.makedirs(os.path.join(f'{args.output_dir}{args.set_type}'))
 
         if not os.path.exists(os.path.join(f'{args.output_dir}/{args.set_type}/generated_plan_{number}.json')):
             result = [{}]
