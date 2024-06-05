@@ -1,480 +1,327 @@
-import re
-import string
+import importlib
 import os
 import sys
 import json
-import time
-
-import requests
+import re
+import argparse
 from typing import List, Dict, Any
 from pandas import DataFrame
-from datetime import datetime
-import tiktoken
 from tqdm import tqdm
-import argparse
 from datasets import load_dataset
+import requests
 from prompts import zeroshot_react_agent_prompt
 
-sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
-sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "tools/planner")))
-sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "../tools/planner")))
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-import importlib
-import pandas as pd
+# Update system path to include necessary directories
+sys.path.extend([
+    os.path.abspath(os.path.join(os.getcwd(), "..")),
+    os.path.abspath(os.path.join(os.getcwd(), "tools/planner")),
+    os.path.abspath(os.path.join(os.getcwd(), "../tools/planner"))
+])
 
-pd.options.display.max_info_columns = 200
-
+# Set environment variables
 os.environ['TIKTOKEN_CACHE_DIR'] = './tmp'
 
-actionMapping = {"FlightSearch":"flights","AttractionSearch":"attractions","GoogleDistanceMatrix":"googleDistanceMatrix","AccommodationSearch":"accommodation","RestaurantSearch":"restaurants","Planner":"planner","NotebookWrite":"notebook","CitySearch":"cities"}
+# Action mapping dictionary to map action types to tool names
+action_mapping = {
+    "FlightSearch": "flights",
+    "AttractionSearch": "attractions",
+    "GoogleDistanceMatrix": "googleDistanceMatrix",
+    "AccommodationSearch": "accommodation",
+    "RestaurantSearch": "restaurants",
+    "Planner": "planner",
+    "NotebookWrite": "notebook",
+    "CitySearch": "cities"
+}
 
 
+# Custom exceptions for handling specific errors
 class CityError(Exception):
     pass
+
 
 class DateError(Exception):
     pass
 
+
+# Llama3 class to interact with the Llama model API
 class Llama3:
-    def __init__(self,
-                 llama_url="http://localhost:11434/api/chat",
-                 model="llama3:instruct",
-                 stream=False,
-                 output="./test_output.json",
-                 messages=[]):
+    def __init__(self, llama_url: str, model: str, stream: bool, output: str, messages: List[Dict[str, Any]]):
         self.llama_url = llama_url
         self.model = model
         self.stream = stream
         self.output = output
         self.messages = messages
 
-    def add_message(self, role, content):
-        if role not in ['user', 'assistant']:
-            raise RuntimeError("Invalid role")
+    def add_message(self, role: str, content: str):
+        """Add a message to the list of messages to be sent to the Llama model."""
+        if role not in ['system', 'user', 'assistant']:
+            raise ValueError("Invalid role")
         self.messages.append({"role": role, "content": content})
 
-    def send_query(self):
+    def send_query(self) -> Dict[str, Any]:
+        """Send the query to the Llama model and return the response."""
         request = {
             "model": self.model,
             "messages": self.messages,
             "stream": self.stream
         }
-
         response = requests.post(self.llama_url, json=request)
+        response_json = response.json()
         with open(self.output, 'w', encoding='utf-8') as f:
-            json.dump(response.json(), f, ensure_ascii=False, indent=4)
+            json.dump(response_json, f, ensure_ascii=False, indent=4)
+        return response_json
 
-        return response.json()
 
-
+# ReactAgent class to manage the interaction process
 class ReactAgent:
-    def __init__(self,
-                 args,
-                 mode: str = 'zero_shot',
-                 tools: List[str] = None,
-                 max_steps: int = 30,
-                 max_retries: int = 3,
-                 illegal_early_stop_patience: int = 3,
-                 react_llm_name='llama3:instruct',
-                 planner_llm_name='llama3:instruct',
-                 city_file_path='../database/background/citySet.txt',
-                 agent_prompt=zeroshot_react_agent_prompt) -> None:
-
-        self.answer = ''
+    def __init__(self, args, mode: str, tools: List[str], max_steps: int, max_retries: int,
+                 illegal_early_stop_patience: int,
+                 react_llm_name: str, planner_llm_name: str, city_file_path: str, agent_prompt: str):
         self.max_steps = max_steps
         self.mode = mode
         self.react_name = react_llm_name
         self.planner_name = planner_llm_name
         self.agent_prompt = agent_prompt
-
-        self.json_log = []
-        self.current_observation = ''
-        self.current_data = None
-
-        self.max_token_length = 8000
-        self.llm = Llama3()
-
         self.illegal_early_stop_patience = illegal_early_stop_patience
-
-        self.tools = self.load_tools(tools, planner_model_name=planner_llm_name)
         self.max_retries = max_retries
-        self.retry_record = {key: 0 for key in self.tools}
-        self.retry_record['invalidAction'] = 0
-
-        self.last_actions = []
         self.city_set = self.load_city(city_file_path)
-
+        self.tools = self.load_tools(tools)
+        self.llm = Llama3(llama_url=args.llama_url, model=react_llm_name, stream=args.stream, output=os.path.join(args.output_dir, "output.json"),
+                          messages=[])
         self.__reset_agent()
 
-    def run(self, query, reset=True) -> None:
+    def run(self, query: str, reset: bool = True):
+        """Run the agent with a given query."""
         self.query = query
-
         if reset:
             self.__reset_agent()
+        self.llm.add_message("system", zeroshot_react_agent_prompt.format(query=self.query, scratchpad=""))
 
         while not self.is_halted() and not self.is_finished():
             self.step()
 
         return self.answer, self.scratchpad, self.json_log
 
-    def step(self) -> None:
+    def step(self):
+        """Perform a single step in the agent's reasoning process."""
         self.json_log.append({"step": self.step_n, "thought": "", "action": "", "observation": "", "state": ""})
-
-        self.scratchpad += f'\nThought {self.step_n}:'
-        self.scratchpad += ' ' + self.prompt_agent()
-
-        print(self.scratchpad.split('\n')[-1])
-        self.json_log[-1]['thought'] = self.scratchpad.split('\n')[-1].replace(f'\nThought {self.step_n}:', "")
-
-        self.scratchpad += f'\nAction {self.step_n}:'
-        action = self.prompt_agent()
-
-        if action is None or action == '' or action == '\n':
-            self.scratchpad += " Your action is filtered due to content. Please make sure your action does not start with ['\\n', 'Thought', 'Action', 'Observation'] and assume all the actions are permitted in this environment and take the action again."
-        else:
-            self.scratchpad += ' ' + action
+        thought = self.prompt_agent(f"Give me thought number {self.step_n} and that only (without extra dialogue) in the following example format:\n\nThought {self.step_n}: [reasoning inserted here]\n")
+        self.json_log[-1]['thought'] = thought
+        action = self.prompt_agent(f"Give me action number {self.step_n} and that only (without extra dialogue) in the following example format:\n\nAction {self.step_n}: \nActionName[Required Information]\n")
+        self.json_log[-1]['action'] = action
 
         if len(self.last_actions) > 0 and self.last_actions[-1] != action:
             self.last_actions.clear()
-
         self.last_actions.append(action)
 
-        ## NEED TO UPDATE
-        self.json_log[-1]['action'] = self.scratchpad.split('\n')[-1].replace(f'\nAction {self.step_n}:', "")
-
         if len(self.last_actions) == 3:
-            print("The same action has been repeated 3 times consecutively. So we stop here.")
             self.json_log[-1]['state'] = 'same action 3 times repeated'
             self.finished = True
             return
 
-        self.scratchpad += f'\nObservation {self.step_n}: '
-
-        if action is None or action == '' or action == '\n':
-            action_type = None
-            action_arg = None
-            self.scratchpad += "No feedback from the environment due to the null action."
-        else:
-            action_type, action_arg = self.parse_action(action)
-
-            if action_type != "Planner":
-                if action_type in actionMapping:
-                    pending_action = actionMapping[action_type]
-                else:
-                    pending_action = 'invalidAction'
-
-                if pending_action in self.retry_record:
-                    if self.retry_record[pending_action] + 1 > self.max_retries:
-                        action_type = 'Planner'
-                        print(f"{pending_action} early stop due to {self.max_retries} max retries.")
-                        self.json_log[-1]['state'] = f"{pending_action} early stop due to {self.max_retries} max retries."
-                        self.finished = True
-                        return
-
-                elif pending_action not in self.retry_record:
-                    if self.retry_record['invalidAction'] + 1 > self.max_retries:
-                        action_type = 'Planner'
-                        print(f"invalidAction Early stop due to {self.max_retries} max retries.")
-                        self.json_log[-1]['state'] = f"invalidAction early stop due to {self.max_retries} max retries."
-                        self.finished = True
-                        return
-
+        self.scratchpad = f'Observation {self.step_n}: '
+        action_type, action_arg = self.parse_action(action)
+        if action_type:
             self.handle_action(action_type, action_arg)
-
-        if action is None or action == '' or action == '\n':
-            print(f'Observation {self.step_n}: ' + "No feedback from the environment due to the null action.")
-            self.json_log[-1]['observation'] = "No feedback from the environment due to the null action."
-        else:
-            print(f'Observation {self.step_n}: ' + self.current_observation + '\n')
-            self.json_log[-1]['observation'] = self.current_observation
-
+        self.json_log[-1]['observation'] = self.current_observation
         self.step_n += 1
 
-        if action_type and action_type == 'Planner' and self.retry_record['planner'] == 0:
+        if action_type == 'Planner' and self.retry_record['planner'] == 0:
             self.finished = True
             self.answer = self.current_observation
-            self.step_n += 1
-            return
 
-    def prompt_agent(self) -> str:
-        while True:
-            self.llm.add_message("user", self._build_agent_prompt())
-            response = self.llm.send_query()
-            # print(self.llm.messages)lam
-            print(response)
-            request = response['message']['content']
-            print("\n\n" + repr(f"llama3 response: {request}") + "\n\n")
-            self.llm.add_message("assistant", request)
-            return request
+        self.llm.add_message('user', self.current_observation)
 
-    def _build_agent_prompt(self) -> str:
-        if self.mode == "zero_shot":
-            return self.agent_prompt.format(
-                query=self.query,
-                scratchpad=self.scratchpad)
+        print(self.llm.messages[-5:])
 
-    def is_finished(self) -> bool:
-        return self.finished
+    def prompt_agent(self, message: str) -> str:
+        """Prompt the agent with a message and return the response."""
+        self.llm.add_message("user", message)
+        response = self.llm.send_query()
+        self.llm.add_message("assistant", response['message']['content'])
+        return response['message']['content']
 
-    def is_halted(self) -> bool:
-        return (self.step_n > self.max_steps or len(self.scratchpad) > self.max_token_length) and not self.finished
-
-    def __reset_agent(self) -> None:
+    def __reset_agent(self):
+        """Reset the agent's state."""
         self.step_n = 1
         self.finished = False
         self.answer = ''
         self.scratchpad = ''
-        self.__reset_record()
         self.json_log = []
         self.current_observation = ''
         self.current_data = None
         self.last_actions = []
-
-        if 'notebook' in self.tools:
-            self.tools['notebook'].reset()
-
-    def __reset_record(self) -> None:
-        self.retry_record = {key: 0 for key in self.retry_record}
+        self.llm.messages = []
+        self.retry_record = {key: 0 for key in action_mapping.values()}
         self.retry_record['invalidAction'] = 0
 
-    def load_tools(self, tools: List[str], planner_model_name=None) -> Dict[str, Any]:
+    def load_tools(self, tools: List[str]) -> Dict[str, Any]:
+        """Load the tools specified in the tools list."""
         tools_map = {}
         for tool_name in tools:
-            module = importlib.import_module("tools.{}.apis".format(tool_name))
-            tools_map[tool_name] = getattr(module, tool_name[0].upper() + tool_name[1:])()
-            if tool_name == 'planner' and planner_model_name is not None:
-                tools_map[tool_name] = getattr(module, tool_name[0].upper() + tool_name[1:])(model_name=planner_model_name)
+            module = importlib.import_module(f"tools.{tool_name}.apis")
+            tool_class = getattr(module, tool_name[0].upper() + tool_name[1:])
+            tools_map[tool_name] = tool_class()
         return tools_map
 
     def load_city(self, city_set_path: str) -> List[str]:
-        city_set = []
-        lines = open(city_set_path, 'r').read().strip().split('\n')
-        for unit in lines:
-            city_set.append(unit)
-        return city_set
+        """Load the list of valid cities from a file."""
+        with open(city_set_path, 'r') as file:
+            return file.read().strip().split('\n')
 
-    def parse_action(self, string: str):
-        pattern = r'^(\w+)\[(.+)\]$'
-        match = re.search(pattern, string, re.M)
+    def parse_action(self, action_str: str):
+        """Parse the action string to extract the action type and arguments."""
+        pattern = r'(\w+)\[(.+)]'
+        match = re.search(pattern, action_str, re.M)
         if match:
-            action_type = match.group(1)
-            action_arg = match.group(2)
-            return action_type, action_arg
+            return match.group(1), match.group(2)
         return None, None
 
-    def handle_action(self, action_type: str, action_arg: str) -> None:
-        print(action_type)
-        if action_type == 'FlightSearch':
-            try:
-                if validate_date_format(action_arg.split(', ')[2]) and validate_city_format(action_arg.split(', ')[0], self.city_set) and validate_city_format(action_arg.split(', ')[1], self.city_set):
-                    self.scratchpad = self.scratchpad.replace(to_string(self.current_data).strip(), 'Masked due to limited length. Make sure the data has been written in Notebook.')
-                    self.current_data = self.tools['flights'].run(action_arg.split(', ')[0], action_arg.split(', ')[1], action_arg.split(', ')[2])
-                    self.current_observation = str(to_string(self.current_data))
-                    self.scratchpad += self.current_observation
-                    self.__reset_record()
-                    self.json_log[-1]['state'] = 'Successful'
-            except DateError:
-                self.retry_record['flights'] += 1
-                self.current_observation = f"'{action_arg.split(', ')[2]}' is not in the format YYYY-MM-DD"
-                self.scratchpad += f"'{action_arg.split(', ')[2]}' is not in the format YYYY-MM-DD"
-                self.json_log[-1]['state'] = 'Illegal args. DateError'
-            except ValueError as e:
-                self.retry_record['flights'] += 1
-                self.current_observation = str(e)
-                self.scratchpad += str(e)
-                self.json_log[-1]['state'] = 'Illegal args. City Error'
-            except Exception as e:
-                print(e)
-                self.retry_record['flights'] += 1
-                self.current_observation = 'Illegal Flight Search. Please try again.'
-                self.scratchpad += 'Illegal Flight Search. Please try again.'
-                self.json_log[-1]['state'] = 'Illegal args. Other Error'
 
-        elif action_type == 'AttractionSearch':
-            try:
-                if validate_city_format(action_arg, self.city_set):
-                    self.scratchpad = self.scratchpad.replace(to_string(self.current_data).strip(), 'Masked due to limited length. Make sure the data has been written in Notebook.')
-                    self.current_data = self.tools['attractions'].run(action_arg)
-                    self.current_observation = to_string(self.current_data).strip('\n').strip()
-                    self.scratchpad += self.current_observation
-                    self.__reset_record()
-                    self.json_log[-1]['state'] = 'Successful'
-            except ValueError as e:
-                self.retry_record['attractions'] += 1
-                self.current_observation = str(e)
-                self.scratchpad += str(e)
-                self.json_log[-1]['state'] = 'Illegal args. City Error'
-            except Exception as e:
-                print(e)
-                self.retry_record['attractions'] += 1
-                self.current_observation = 'Illegal Attraction Search. Please try again.'
-                self.scratchpad += 'Illegal Attraction Search. Please try again.'
-                self.json_log[-1]['state'] = 'Illegal args. Other Error'
 
-        elif action_type == 'AccommodationSearch':
+    def handle_action(self, action_type: str, action_arg: str):
+        """Handle the action based on its type."""
+        if action_type in action_mapping:
             try:
-                if validate_city_format(action_arg, self.city_set):
-                    self.scratchpad = self.scratchpad.replace(to_string(self.current_data).strip(), 'Masked due to limited length. Make sure the data has been written in Notebook.')
-                    self.current_data = self.tools['accommodations'].run(action_arg)
-                    self.current_observation = to_string(self.current_data).strip('\n').strip()
-                    self.scratchpad += self.current_observation
-                    self.__reset_record()
-                    self.json_log[-1]['state'] = 'Successful'
-            except ValueError as e:
-                self.retry_record['accommodations'] += 1
-                self.current_observation = str(e)
-                self.scratchpad += str(e)
-                self.json_log[-1]['state'] = 'Illegal args. City Error'
+                action_func = getattr(self, f'handle_{action_type.lower()}')
+                action_func(action_arg)
             except Exception as e:
-                print(e)
-                self.retry_record['accommodations'] += 1
-                self.current_observation = 'Illegal Accommodation Search. Please try again.'
-                self.scratchpad += 'Illegal Accommodation Search. Please try again.'
-                self.json_log[-1]['state'] = 'Illegal args. Other Error'
+                self.current_observation = f'Error in {action_type}: {str(e)}'
+                self.json_log[-1]['state'] = 'Error'
 
-        elif action_type == 'RestaurantSearch':
-            try:
-                if validate_city_format(action_arg, self.city_set):
-                    self.scratchpad = self.scratchpad.replace(to_string(self.current_data).strip(), 'Masked due to limited length. Make sure the data has been written in Notebook.')
-                    self.current_data = self.tools['restaurants'].run(action_arg)
-                    self.current_observation = to_string(self.current_data).strip()
-                    self.scratchpad += self.current_observation
-                    self.__reset_record()
-                    self.json_log[-1]['state'] = 'Successful'
-            except ValueError as e:
-                self.retry_record['restaurants'] += 1
-                self.current_observation = str(e)
-                self.scratchpad += str(e)
-                self.json_log[-1]['state'] = 'Illegal args. City Error'
-            except Exception as e:
-                print(e)
-                self.retry_record['restaurants'] += 1
-                self.current_observation = 'Illegal Restaurant Search. Please try again.'
-                self.scratchpad += 'Illegal Restaurant Search. Please try again.'
-                self.json_log[-1]['state'] = 'Illegal args. Other Error'
+    def handle_flightsearch(self, args: str):
+        """Handle the FlightSearch action."""
+        from_city, to_city, date = args.split(', ')
+        if not validate_date_format(date):
+            raise DateError(f"Invalid date format: {date}")
+        if from_city not in self.city_set or to_city not in self.city_set:
+            raise CityError(f"Invalid cities: {from_city}, {to_city}")
+        self.current_data = self.tools['flights'].run(from_city, to_city, date)
+        self.current_observation = to_string(self.current_data)
+        self.json_log[-1]['state'] = 'Successful'
 
-        elif action_type == "CitySearch":
-            try:
-                self.scratchpad = self.scratchpad.replace(to_string(self.current_data).strip(), 'Masked due to limited length. Make sure the data has been written in Notebook.')
-                self.current_observation = to_string(self.tools['cities'].run(action_arg)).strip()
-                self.scratchpad += self.current_observation
-                self.__reset_record()
-                self.json_log[-1]['state'] = 'Successful'
-            except ValueError as e:
-                self.retry_record['cities'] += 1
-                self.current_observation = str(e)
-                self.scratchpad += str(e)
-                self.json_log[-1]['state'] = 'Illegal args. State Error'
-            except Exception as e:
-                print(e)
-                self.retry_record['cities'] += 1
-                self.current_observation = 'Illegal City Search. Please try again.'
-                self.scratchpad += 'Illegal City Search. Please try again.'
-                self.json_log[-1]['state'] = 'Illegal args. Other Error'
+    def handle_attractionsearch(self, args: str):
+        """Handle the AttractionSearch action."""
+        city = args.strip()
+        if city not in self.city_set:
+            raise CityError(f"Invalid city: {city}")
+        self.current_data = self.tools['attractions'].run(city)
+        self.current_observation = to_string(self.current_data)
+        self.json_log[-1]['state'] = 'Successful'
 
-        elif action_type == 'GoogleDistanceMatrix':
-            try:
-                self.scratchpad = self.scratchpad.replace(to_string(self.current_data).strip(), 'Masked due to limited length. Make sure the data has been written in Notebook.')
-                self.current_data = self.tools['googleDistanceMatrix'].run(action_arg.split(', ')[0], action_arg.split(', ')[1], action_arg.split(', ')[2])
-                self.current_observation = to_string(self.current_data)
-                self.scratchpad += self.current_observation
-                self.__reset_record()
-                self.json_log[-1]['state'] = 'Successful'
-            except Exception as e:
-                print(e)
-                self.retry_record['googleDistanceMatrix'] += 1
-                self.current_observation = 'Illegal GoogleDistanceMatrix. Please try again.'
-                self.scratchpad += 'Illegal GoogleDistanceMatrix. Please try again.'
-                self.json_log[-1]['state'] = 'Illegal args. Other Error'
+    def handle_accommodationsearch(self, args: str):
+        """Handle the AccommodationSearch action."""
+        city = args.strip()
+        if city not in self.city_set:
+            raise CityError(f"Invalid city: {city}")
+        self.current_data = self.tools['accommodations'].run(city)
+        self.current_observation = to_string(self.current_data)
+        self.json_log[-1]['state'] = 'Successful'
 
-        elif action_type == 'NotebookWrite':
-            try:
-                self.scratchpad = self.scratchpad.replace(to_string(self.current_data).strip(), 'Masked due to limited length. Make sure the data has been written in Notebook.')
-                self.current_observation = str(self.tools['notebook'].write(self.current_data, action_arg))
-                self.scratchpad += self.current_observation
-                self.__reset_record()
-                self.json_log[-1]['state'] = 'Successful'
-            except Exception as e:
-                print(e)
-                self.retry_record['notebook'] += 1
-                self.current_observation = f'{e}'
-                self.scratchpad += f'{e}'
-                self.json_log[-1]['state'] = 'Illegal args. Other Error'
+    def handle_restaurantsearch(self, args: str):
+        """Handle the RestaurantSearch action."""
+        city = args.strip()
+        if city not in self.city_set:
+            raise CityError(f"Invalid city: {city}")
+        self.current_data = self.tools['restaurants'].run(city)
+        self.current_observation = to_string(self.current_data)
+        self.json_log[-1]['state'] = 'Successful'
 
-        elif action_type == "Planner":
-            self.current_observation = str(self.tools['planner'].run(str(self.tools['notebook'].list_all()), action_arg))
-            self.scratchpad += self.current_observation
-            self.answer = self.current_observation
-            self.__reset_record()
-            self.json_log[-1]['state'] = 'Successful'
-        else:
-            self.retry_record['invalidAction'] += 1
-            self.current_observation = 'Invalid Action. Valid Actions are FlightSearch[Departure City, Destination City, Date] / AccommodationSearch[City] / RestaurantSearch[City] / NotebookWrite[Short Description] / AttractionSearch[City] / CitySearch[State] / GoogleDistanceMatrix[Origin, Destination, Mode] and Planner[Query].'
-            self.scratchpad += self.current_observation
-            self.json_log[-1]['state'] = 'invalidAction'
+    def handle_citysearch(self, args: str):
+        """Handle the CitySearch action."""
+        state = args.strip()
+        self.current_data = self.tools['cities'].run(state)
+        self.current_observation = to_string(self.current_data)
+        self.json_log[-1]['state'] = 'Successful'
+
+    def handle_googledistancematrix(self, args: str):
+        """Handle the GoogleDistanceMatrix action."""
+        origin, destination, mode = args.split(', ')
+        self.current_data = self.tools['googleDistanceMatrix'].run(origin, destination, mode)
+        self.current_observation = to_string(self.current_data)
+        self.json_log[-1]['state'] = 'Successful'
+
+    def handle_notebookwrite(self, args: str):
+        """Handle the NotebookWrite action."""
+        self.current_observation = str(self.tools['notebook'].write(self.current_data, args))
+        self.json_log[-1]['state'] = 'Successful'
+
+    def handle_planner(self, args: str):
+        """Handle the Planner action."""
+        self.current_observation = str(self.tools['planner'].run(str(self.tools['notebook'].list_all()), args))
+        self.answer = self.current_observation
+        self.json_log[-1]['state'] = 'Successful'
+    def is_finished(self) -> bool:
+        """Check if the agent has finished its process."""
+        return self.finished
+
+    def is_halted(self) -> bool:
+        """Check if the agent has halted due to reaching maximum steps or token length."""
+        return (self.step_n > self.max_steps) and not self.finished
+
 
 def validate_date_format(date_str: str) -> bool:
-    pattern = r'^\d{4}-\d{2}-\d{2}$'
-    if not re.match(pattern, date_str):
-        raise DateError
-    return True
+    """Validate the date format to ensure it matches YYYY-MM-DD."""
+    return bool(re.match(r'^\d{4}-\d{2}-\d{2}$', date_str))
 
-def validate_city_format(city_str: str, city_set: list) -> bool:
-    if city_str not in city_set:
-        raise ValueError(f"{city_str} is not valid city in {str(city_set)}.")
-    return True
 
 def to_string(data) -> str:
+    """Convert data to a string format, handling different data types."""
     if data is not None:
         if isinstance(data, DataFrame):
             return data.to_string(index=False)
-        else:
-            return str(data)
-    else:
-        return str(None)
+        return str(data)
+    return "None"
+
 
 if __name__ == '__main__':
-    tools_list = ["notebook", "flights", "attractions", "accommodations", "restaurants", "googleDistanceMatrix", "planner", "cities"]
+    # Command-line argument parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--set_type", type=str, default="validation")
-    parser.add_argument("--model_name", type=str, default="llama3:instruct")
-    parser.add_argument("--output_dir", type=str, default="./")
+    parser.add_argument("--llama_url", default="http://localhost:11434/api/chat", type=str)
+    parser.add_argument("--model_name", default="llama3:8b-instruct-fp16", type=str)
+    parser.add_argument("--output_dir", default="./output/", type=str)
+    parser.add_argument("--stream", default=False, action='store_true')
+    parser.add_argument("--set_type", default="validation", type=str)
     args = parser.parse_args()
 
-    if args.set_type == 'validation':
-        query_data_list = load_dataset('osunlp/TravelPlanner', 'validation')['validation']
-    elif args.set_type == 'test':
-        query_data_list = load_dataset('osunlp/TravelPlanner', 'test')['test']
+    # Load the dataset based on the set type
+    dataset = load_dataset('osunlp/TravelPlanner', args.set_type)[args.set_type]
+    tools_list = ["notebook", "flights", "attractions", "accommodations", "restaurants", "googleDistanceMatrix",
+                  "planner", "cities"]
 
-    print(query_data_list)
-    numbers = [i for i in range(1, len(query_data_list) + 1)]
-    agent = ReactAgent(None, tools=tools_list, max_steps=30, react_llm_name=args.model_name, planner_llm_name=args.model_name)
+    # Initialize the ReactAgent
+    agent = ReactAgent(args, mode='zero_shot', tools=tools_list, max_steps=30, max_retries=3,
+                       illegal_early_stop_patience=3,
+                       react_llm_name=args.model_name, planner_llm_name=args.model_name,
+                       city_file_path='../database/background/citySet.txt',
+                       agent_prompt=zeroshot_react_agent_prompt)
 
-    for number in tqdm(numbers[:5]):
-        query = query_data_list[number - 1]['query']
+    # Create output directory if it doesn't exist
+    output_path = os.path.join(args.output_dir, args.set_type)
+    os.makedirs(output_path, exist_ok=True)
 
-        if not os.path.exists(os.path.join(f'{args.output_dir}{args.set_type}')):
-            os.makedirs(os.path.join(f'{args.output_dir}{args.set_type}'))
+    # Process each query in the dataset
+    for number, data in enumerate(tqdm(dataset), start=1):
+        query = data['query']
+        output_file = os.path.join(output_path, f'generated_plan_{number}.json')
 
-        if not os.path.exists(os.path.join(f'{args.output_dir}/{args.set_type}/generated_plan_{number}.json')):
-            result = [{}]
+        if os.path.exists(output_file):
+            with open(output_file, 'r') as f:
+                result = json.load(f)
         else:
-            result = json.load(open(os.path.join(f'{args.output_dir}/{args.set_type}/generated_plan_{number}.json')))
+            result = [{}]
 
-        while True:
-            planner_results, scratchpad, action_log = agent.run(query)
-            if planner_results is not None:
-                break
-
+        # Run the agent to get the results
+        planner_results, scratchpad, action_log = agent.run(query)
         if planner_results == 'Max Token Length Exceeded.':
             result[-1][f'{args.model_name}_two-stage_results_logs'] = scratchpad
             result[-1][f'{args.model_name}_two-stage_results'] = 'Max Token Length Exceeded.'
             action_log[-1]['state'] = 'Max Token Length of Planner Exceeded.'
-            result[-1][f'{args.model_name}_two-stage_action_logs'] = action_log
         else:
             result[-1][f'{args.model_name}_two-stage_results_logs'] = scratchpad
             result[-1][f'{args.model_name}_two-stage_results'] = planner_results
             result[-1][f'{args.model_name}_two-stage_action_logs'] = action_log
 
-        with open(os.path.join(f'{args.output_dir}/{args.set_type}/generated_plan_{number}.json'), 'w') as f:
+        # Save the results to a file
+        with open(output_file, 'w') as f:
             json.dump(result, f, indent=4)
