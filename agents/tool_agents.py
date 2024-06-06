@@ -86,6 +86,7 @@ class ReactAgent:
         self.max_retries = max_retries
         self.city_set = self.load_city(city_file_path)
         self.tools = self.load_tools(tools)
+        self.tools_list = tools
         self.llm = Llama3(llama_url=args.llama_url, model=react_llm_name, stream=args.stream, output=os.path.join(args.output_dir, "output.json"),
                           messages=[])
         self.__reset_agent()
@@ -132,7 +133,7 @@ class ReactAgent:
 
         self.llm.add_message('user', self.current_observation)
 
-        print(self.llm.messages[-5:])
+        # print(self.llm.messages[-5:])
 
     def prompt_agent(self, message: str) -> str:
         """Prompt the agent with a message and return the response."""
@@ -154,6 +155,8 @@ class ReactAgent:
         self.llm.messages = []
         self.retry_record = {key: 0 for key in action_mapping.values()}
         self.retry_record['invalidAction'] = 0
+        self.tools = self.load_tools(self.tools_list)
+
 
     def load_tools(self, tools: List[str]) -> Dict[str, Any]:
         """Load the tools specified in the tools list."""
