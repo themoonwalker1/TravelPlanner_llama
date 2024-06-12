@@ -520,26 +520,47 @@ def is_not_absent(question, tested_data):
 
 def evaluation(query_data, tested_data):
     return_info = {}
-    return_info['is_reasonalbe_visiting_city'] = is_reasonalbe_visiting_city(query_data, tested_data)
-    return_info['is_valid_restaurants'] = is_valid_restaurants(query_data, tested_data)
-    return_info['is_valid_attractions'] = is_valid_attractions(query_data, tested_data)
-    return_info['is_valid_accommodation'] = is_valid_accommodaton(query_data, tested_data)
-    return_info['is_valid_transportation'] = is_valid_transportation(query_data, tested_data)
-    return_info['is_valid_information_in_current_city'] = is_valid_information_in_current_city(query_data, tested_data)
-    return_info['is_valid_information_in_sandbox'] = is_valid_information_in_sandbox(query_data, tested_data)
-    return_info['is_not_absent'] = is_not_absent(query_data, tested_data)
-    return return_info
+    try:
+        return_info['is_reasonalbe_visiting_city'] = is_reasonalbe_visiting_city(query_data, tested_data)
+        return_info['is_valid_restaurants'] = is_valid_restaurants(query_data, tested_data)
+        return_info['is_valid_attractions'] = is_valid_attractions(query_data, tested_data)
+        return_info['is_valid_accommodation'] = is_valid_accommodaton(query_data, tested_data)
+        return_info['is_valid_transportation'] = is_valid_transportation(query_data, tested_data)
+        return_info['is_valid_information_in_current_city'] = is_valid_information_in_current_city(query_data, tested_data)
+        return_info['is_valid_information_in_sandbox'] = is_valid_information_in_sandbox(query_data, tested_data)
+        return_info['is_not_absent'] = is_not_absent(query_data, tested_data)
+        return return_info
+    except Exception:
+        return_info['is_reasonalbe_visiting_city'] = False, "Error"
+        return_info['is_valid_restaurants'] = False, "Error"
+        return_info['is_valid_attractions'] = False, "Error"
+        return_info['is_valid_accommodation'] = False, "Error"
+        return_info['is_valid_transportation'] = False, "Error"
+        return_info['is_valid_information_in_current_city'] = False, "Error"
+        return_info['is_valid_information_in_sandbox'] = False, "Error"
+        return_info['is_not_absent'] = False, "Error"
+        return return_info
 
 def boolean_evaluation(query_data, tested_data):
     return_info = {}
-    return_info['is_reasonalbe_visiting_city'] = is_reasonalbe_visiting_city(query_data, tested_data)
-    return_info['is_valid_restaurants'] = is_valid_restaurants(query_data, tested_data)
-    return_info['is_valid_accommodation'] = is_valid_accommodaton(query_data, tested_data)
-    return_info['is_valid_attractions'] = is_valid_attractions(query_data, tested_data)
-    return_info['is_valid_transportation'] = is_valid_transportation(query_data, tested_data)
-    return_info['is_valid_information_in_current_city'] = is_valid_information_in_current_city(query_data, tested_data)
-    return_info['is_valid_information_in_sandbox'] = is_valid_information_in_sandbox(query_data, tested_data)
-    return_info['is_not_absent'] = is_not_absent(query_data, tested_data)
+    try:
+        return_info['is_reasonalbe_visiting_city'] = is_reasonalbe_visiting_city(query_data, tested_data)
+        return_info['is_valid_restaurants'] = is_valid_restaurants(query_data, tested_data)
+        return_info['is_valid_attractions'] = is_valid_attractions(query_data, tested_data)
+        return_info['is_valid_accommodation'] = is_valid_accommodaton(query_data, tested_data)
+        return_info['is_valid_transportation'] = is_valid_transportation(query_data, tested_data)
+        return_info['is_valid_information_in_current_city'] = is_valid_information_in_current_city(query_data, tested_data)
+        return_info['is_valid_information_in_sandbox'] = is_valid_information_in_sandbox(query_data, tested_data)
+        return_info['is_not_absent'] = is_not_absent(query_data, tested_data)
+    except Exception:
+        return_info['is_reasonalbe_visiting_city'] = False, "Error"
+        return_info['is_valid_restaurants'] = False, "Error"
+        return_info['is_valid_attractions'] = False, "Error"
+        return_info['is_valid_accommodation'] = False, "Error"
+        return_info['is_valid_transportation'] = False, "Error"
+        return_info['is_valid_information_in_current_city'] = False, "Error"
+        return_info['is_valid_information_in_sandbox'] = False, "Error"
+        return_info['is_not_absent'] = False, "Error"
     for key in return_info:
         if return_info[key][0] == False:
             print(return_info[key][1])

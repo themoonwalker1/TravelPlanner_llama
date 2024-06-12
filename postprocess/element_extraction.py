@@ -2,16 +2,16 @@ import argparse
 from datasets import load_dataset
 from tqdm import tqdm
 import json
-
+import os
 
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--set_type", type=str, default="validation")
-    parser.add_argument("--model_name", type=str, default="gpt-3.5-turbo-1106")
+    parser.add_argument("--model_name", type=str, default="llama3:8b-instruct-fp16")
     parser.add_argument("--mode", type=str, default="two-stage")
     parser.add_argument("--strategy", type=str, default="direct")
-    parser.add_argument("--output_dir", type=str, default="./")
+    parser.add_argument("--output_dir", type=str, default=os.getcwd() + "/evaluation/output")
     parser.add_argument("--tmp_dir", type=str, default="./")
 
     args = parser.parse_args()
