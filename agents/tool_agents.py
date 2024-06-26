@@ -56,19 +56,23 @@ class Llama3:
         """Add a message to the list of messages to be sent to the Llama model."""
         if role not in ['system', 'user', 'assistant']:
             raise ValueError("Invalid role")
+        print(content)
         self.messages.append({"role": role, "content": content})
 
     def send_query(self) -> Dict[str, Any]:
         """Send the query to the Llama model and return the response."""
         request = {
             "model": self.model,
-            "messages": self.messages,
+            "messages": self.messages[:],
             "stream": self.stream
         }
+        # request["messages"][-1]['content'] =  + request["messages"][-1]['content']
         response = requests.post(self.llama_url, json=request)
         response_json = response.json()
         with open(self.output, 'w', encoding='utf-8') as f:
             json.dump(response_json, f, ensure_ascii=False, indent=4)
+        
+        self.add_message("assistant", response_json['message']['content'])
         return response_json
 
 
@@ -137,9 +141,8 @@ class ReactAgent:
 
     def prompt_agent(self, message: str) -> str:
         """Prompt the agent with a message and return the response."""
-        self.llm.add_message("user", message)
+        self.llm.add_message("user", message)#"\nImportant Information Stored in Notebook:" + str(self.tools['notebook'].list_all()) + "\nMake sure to look at the conversation history and Notebook to not repeat previous steps and double check accuracy before you give an answer to the following. If you successfully got information from an action, then make sure to always write it in the notebook. Only give me the following next step:\n" + message)        
         response = self.llm.send_query()
-        self.llm.add_message("assistant", response['message']['content'])
         return response['message']['content']
 
     def __reset_agent(self):
@@ -246,6 +249,7 @@ class ReactAgent:
 
     def handle_notebookwrite(self, args: str):
         """Handle the NotebookWrite action."""
+        print("writing to notebook")
         self.current_observation = str(self.tools['notebook'].write(self.current_data, args))
         self.json_log[-1]['state'] = 'Successful'
 
@@ -281,7 +285,7 @@ if __name__ == '__main__':
     # Command-line argument parsing
     parser = argparse.ArgumentParser()
     parser.add_argument("--llama_url", default="http://localhost:11434/api/chat", type=str)
-    parser.add_argument("--model_name", default="llama3:8b-instruct-fp16", type=str)
+    parser.add_argument("--model_name", default="llama3:8b-instruct-fp16", type=str) # command-r-plus:latest
     parser.add_argument("--output_dir", default="./output/", type=str)
     parser.add_argument("--stream", default=False, action='store_true')
     parser.add_argument("--set_type", default="validation", type=str)
@@ -293,7 +297,7 @@ if __name__ == '__main__':
                   "planner", "cities"]
 
     # Initialize the ReactAgent
-    agent = ReactAgent(args, mode='zero_shot', tools=tools_list, max_steps=30, max_retries=3,
+    agent = ReactAgent(args, mode='zero_shot', tools=tools_list, max_steps=15, max_retries=3,
                        illegal_early_stop_patience=3,
                        react_llm_name=args.model_name, planner_llm_name=args.model_name,
                        city_file_path='../database/background/citySet.txt',
@@ -305,6 +309,7 @@ if __name__ == '__main__':
 
     # Process each query in the dataset
     for number, data in enumerate(tqdm(dataset), start=1):
+        if number > 1: continue
         query = data['query']
         output_file = os.path.join(output_path, f'generated_plan_{number}.json')
 

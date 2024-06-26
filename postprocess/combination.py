@@ -31,11 +31,13 @@ if __name__ == '__main__':
     idx_number_list = [i for i in range(1,len(query_data_list)+1)]
 
     submission_list = []
-
-    for idx in tqdm(idx_number_list):
-        generated_plan = json.load(open(f'{args.output_dir}/{args.set_type}/generated_plan_{idx}.json'))
-        plan = generated_plan[-1][f'{args.model_name}{suffix}_{args.mode}_parsed_results']
-        submission_list.append({"idx":idx,"query":query_data_list[idx-1]['query'],"plan":plan})
+    try:
+        for idx in tqdm(idx_number_list):
+            generated_plan = json.load(open(f'{args.output_dir}/{args.set_type}/generated_plan_{idx}.json'))
+            plan = generated_plan[-1][f'{args.model_name}{suffix}_{args.mode}_parsed_results']
+            submission_list.append({"idx":idx,"query":query_data_list[idx-1]['query'],"plan":plan})
+    except:
+        pass
     
     with open(f'{args.submission_file_dir}/{args.set_type}_{args.model_name}{suffix}_{args.mode}_submission.jsonl','w',encoding='utf-8') as w:
         for unit in submission_list:

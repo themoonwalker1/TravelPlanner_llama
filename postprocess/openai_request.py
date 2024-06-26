@@ -279,11 +279,14 @@ def build_plan_format_conversion_prompt(directory, set_type='validation',model_n
         suffix = ''
     elif mode == 'sole-planning':
         suffix = f'_{strategy}'
-    for idx in tqdm(idx_number_list):
-        generated_plan = json.load(open(f'{directory}/{set_type}/generated_plan_{idx}.json'))
-        if generated_plan[-1][f'{model_name}{suffix}_{mode}_results'] and generated_plan[-1][f'{model_name}{suffix}_{mode}_results'] != "":
-            prompt = prefix + "Text:\n"+generated_plan[-1][f'{model_name}{suffix}_{mode}_results']+"\nJSON:\n"
-        else:
-            prompt = ""
-        prompt_list.append(prompt)
+    try:
+        for idx in tqdm(idx_number_list):
+            generated_plan = json.load(open(f'{directory}/{set_type}/generated_plan_{idx}.json'))
+            if generated_plan[-1][f'{model_name}{suffix}_{mode}_results'] and generated_plan[-1][f'{model_name}{suffix}_{mode}_results'] != "":
+                prompt = prefix + "Text:\n"+generated_plan[-1][f'{model_name}{suffix}_{mode}_results']+"\nJSON:\n"
+            else:
+                prompt = ""
+            prompt_list.append(prompt)
+    except:
+            pass
     return prompt_list
