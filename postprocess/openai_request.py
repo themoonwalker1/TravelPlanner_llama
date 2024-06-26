@@ -178,7 +178,7 @@ def prompt_chatgpt(system_input, user_input, temperature,save_path,index,history
     # Initialize Llama3
     llm = Llama3(
         llama_url="http://localhost:11434/api/chat/",
-        model="llama3:8b-instruct-fp16",
+        model="llama3:instruct",
         stream=False,
         output="response.json",
         messages=history
@@ -193,7 +193,7 @@ def prompt_chatgpt(system_input, user_input, temperature,save_path,index,history
     # if completion is None:
     #     raise TimeoutError
 
-    assistant_output = completion['message']['content']
+    assistant_output = completion['messages']['content']
     llm.messages.append({"role": "assistant", "content": assistant_output})
     # total_prompt_tokens = completion['usage']['prompt_tokens']
     # total_completion_tokens = completion['usage']['completion_tokens']

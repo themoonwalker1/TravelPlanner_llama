@@ -285,7 +285,7 @@ if __name__ == '__main__':
     # Command-line argument parsing
     parser = argparse.ArgumentParser()
     parser.add_argument("--llama_url", default="http://localhost:11434/api/chat", type=str)
-    parser.add_argument("--model_name", default="llama3:8b-instruct-fp16", type=str) # command-r-plus:latest
+    parser.add_argument("--model_name", type=str) # command-r-plus:latest
     parser.add_argument("--output_dir", default="./output/", type=str)
     parser.add_argument("--stream", default=False, action='store_true')
     parser.add_argument("--set_type", default="validation", type=str)
