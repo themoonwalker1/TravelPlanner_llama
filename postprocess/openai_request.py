@@ -178,7 +178,7 @@ def prompt_chatgpt(system_input, user_input, temperature,save_path,index,history
     # Initialize Llama3
     llm = Llama3(
         llama_url="http://localhost:11434/api/chat/",
-        model="llama3:8b-instruct-fp16",
+        model="l70",
         stream=False,
         output="response.json",
         messages=history

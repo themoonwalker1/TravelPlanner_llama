@@ -1,4 +1,7 @@
-
+.idea/
+.vscode/
+venv/
+database
 *.pyc
 *.ipynb
 utils/.DS_Store

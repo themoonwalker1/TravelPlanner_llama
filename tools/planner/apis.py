@@ -31,7 +31,7 @@ class DateError(Exception):
 class Llama3:
     def __init__(self,
                  llama_url="http://localhost:11434/api/chat",
-                 model="llama3:8b-instruct-fp16",
+                 model="l70",
                  stream=False,
                  output="./test_output.json",
                  messages=[]):
@@ -76,7 +76,7 @@ class ReflexionStrategy(Enum):
 class Planner:
     def __init__(self,
                  agent_prompt: PromptTemplate = planner_agent_prompt,
-                 model_name: str = 'llama3:8b-instruct-fp16',
+                 model_name: str = "l70",
                  ) -> None:
 
         self.agent_prompt = agent_prompt
@@ -110,7 +110,7 @@ class ReactPlanner:
 
     def __init__(self,
                  agent_prompt: PromptTemplate = react_planner_agent_prompt,
-                 model_name: str = 'llama3:8b-instruct-fp16',
+                 model_name: str = "l70",
                  ) -> None:
 
         self.agent_prompt = agent_prompt
@@ -213,7 +213,7 @@ class ReactReflectPlanner:
     def __init__(self,
                  agent_prompt: PromptTemplate = react_reflect_planner_agent_prompt,
                  reflect_prompt: PromptTemplate = reflect_prompt,
-                 model_name: str = 'llama3:8b-instruct-fp16',
+                 model_name: str = "l70",
                  ) -> None:
 
         self.agent_prompt = agent_prompt

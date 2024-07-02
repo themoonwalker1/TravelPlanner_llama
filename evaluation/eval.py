@@ -265,7 +265,7 @@ def eval_score(set_type: str, file_path: str):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--set_type", type=str, default="validation")
-    parser.add_argument("--model_name", type=str, default="llama3:8b-instruct-fp16")
+    parser.add_argument("--model_name", type=str, default="l70")
     args = parser.parse_args()
     
     evaluation_file_path = f"/home/chinmay/TravelPlanner_llama/validation_{args.model_name}_two-stage_submission.jsonl"

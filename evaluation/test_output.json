@@ -1,0 +1,16 @@
+{
+    "model": "l70",
+    "created_at": "2024-07-02T15:08:11.984975669Z",
+    "message": {
+        "role": "assistant",
+        "content": "Based on the provided information, I've created a 5-day travel plan for you:\n\n**Day 1: March 13th**\n\n* Morning: Take Flight F3792603 from Washington to Myrtle Beach, departing at 09:19 and arriving at 10:59 (1 hour 40 minutes).\n* Afternoon: Check-in to your accommodation. I recommend \"Cozy Brooklyn Room - Next to Pratt Institute\" which is a private room for $418 per night.\n* Evening: Explore Myrtle Beach, visit the beach, and enjoy dinner at one of the local restaurants.\n\n**Day 2: March 14th**\n\n* Morning: Spend the day relaxing on the beach or exploring Myrtle Beach's attractions, such as the Myrtle Waves Water Park or the SkyWheel.\n* Afternoon: Take a stroll along the Myrtle Beach Boardwalk, which offers beautiful ocean views and plenty of shops and restaurants.\n* Evening: Enjoy dinner at a local seafood restaurant.\n\n**Day 3: March 15th**\n\n* Morning: Visit the Brookgreen Gardens, a beautiful sculpture garden with over 1,400 works of art.\n* Afternoon: Take a break from the sun and visit the Myrtle Beach Pinball Museum or the Hollywood Wax Museum.\n* Evening: Enjoy dinner at a local restaurant and explore the nightlife of Myrtle Beach.\n\n**Day 4: March 16th**\n\n* Morning: Go on a dolphin-watching tour or take a fishing trip in the Atlantic Ocean.\n* Afternoon: Visit the Market Common, an upscale shopping center with a variety of stores and restaurants.\n* Evening: Enjoy dinner at a local restaurant and relax at your accommodation.\n\n**Day 5: March 17th**\n\n* Morning: Check-out of your accommodation and spend some time shopping for souvenirs or visiting any last-minute attractions.\n* Afternoon: Drive back to Washington (approximately 6 hours 47 minutes) or take a flight from Myrtle Beach International Airport.\n\nBudget Breakdown:\n\n* Flights: $164\n* Accommodation (4 nights): $1,672 (avg. $418 per night)\n* Transportation (self-driving): $34 (gas estimate for the round trip)\n* Food and activities: estimated $500-700 per day (total: $2,500-3,500)\n\nTotal estimated cost for the 5-day trip: $4,370-5,270\n\nThis travel plan provides a mix of relaxation, exploration, and activities in Myrtle Beach. However, feel free to adjust it according to your preferences and budget."
+    },
+    "done_reason": "stop",
+    "done": true,
+    "total_duration": 58598045662,
+    "load_duration": 1848220,
+    "prompt_eval_count": 1012,
+    "prompt_eval_duration": 981221000,
+    "eval_count": 525,
+    "eval_duration": 57508666000
+}

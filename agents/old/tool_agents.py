@@ -56,6 +56,7 @@ class Llama3:
         """Add a message to the list of messages to be sent to the Llama model."""
         if role not in ['system', 'user', 'assistant']:
             raise ValueError("Invalid role")
+        print(content)
         self.messages.append({"role": role, "content": content})
 
     def send_query(self) -> Dict[str, Any]:
@@ -70,9 +71,8 @@ class Llama3:
         response_json = response.json()
         with open(self.output, 'w', encoding='utf-8') as f:
             json.dump(response_json, f, ensure_ascii=False, indent=4)
-
+        
         self.add_message("assistant", response_json['message']['content'])
-        # print(response_json['message']['content'])
         return response_json
 
 
@@ -91,18 +91,16 @@ class ReactAgent:
         self.city_set = self.load_city(city_file_path)
         self.tools = self.load_tools(tools)
         self.tools_list = tools
-        self.llm = Llama3(llama_url=args.llama_url, model=react_llm_name, stream=args.stream,
-                          output=os.path.join(args.output_dir, "output.json"),
+        self.llm = Llama3(llama_url=args.llama_url, model=react_llm_name, stream=args.stream, output=os.path.join(args.output_dir, "output.json"),
                           messages=[])
         self.__reset_agent()
 
     def run(self, query: str, reset: bool = True):
         """Run the agent with a given query."""
         self.query = query
-        print(self.query)
         if reset:
             self.__reset_agent()
-        self.llm.add_message("user", self.query + "\n\nDo not give any thoughts or actions, just acknowledge the query and repeat the important information in a more itemized easy to understand list.")
+        self.llm.add_message("system", zeroshot_react_agent_prompt.format(query=self.query, scratchpad=""))
 
         while not self.is_halted() and not self.is_finished():
             self.step()
@@ -110,104 +108,11 @@ class ReactAgent:
         return self.answer, self.scratchpad, self.json_log
 
     def step(self):
-        time.sleep(5)
         """Perform a single step in the agent's reasoning process."""
-        self.json_log.append({"step": self.step_n, "thought_prompt": "", "thought": "", "action_prompt": "", "action": "", "observation": "", "state": ""})
-        print(self.previousActions)
-        self.json_log[-1]['thought_prompt'] = f"""
-What is your thought for the next step? Make sure to specifically detail what you need.
-
-**Current Action Entries:**
-{self.previousActions}
-
-**Previous Action State:**
-{self.json_log[-1]['state']}
-
-Make sure to avoid repetition in actions and ensure the next action has a logical progression. Immediately call NotebookWrite after every successful action to store it in the notebook. There is no need for small details as it is just to gather information for a plan. The possible actions are as follows: ["FlightSearch", "GoogleDistanceMatrix", "AccommodationSearch", "RestaurantSearch", "AttractionSearch", "CitySearch", "NotebookWrite", "Planner"]. Don't explicitly choose them, but reason for one of them indirectly:
-
-Check the previous entries before reasoning for the next step to ensure it is not repeated. Be sure to gather information regarding transportation, accommodation, attractions, and food for each place being visited. If all information is gathered, then we can finish and call Planner.
-
-DO NOT IN ANY CIRCUMSTANCE REASON FOR REFINING INFORMATION OR COMPARING INFORMATION. You do not have the ability to do so. You can only reason for one of the previously mentioned actions.
-
-Do not mention what the next action should be explicitly.
-        """
-        thought = self.prompt_agent(message=self.json_log[-1]['thought_prompt'])
-        print(thought)
+        self.json_log.append({"step": self.step_n, "thought": "", "action": "", "observation": "", "state": ""})
+        thought = self.prompt_agent(f"Give me thought number {self.step_n} and that only (without extra dialogue) in the following example format:\n\nThought {self.step_n}: [reasoning inserted here]\n")
         self.json_log[-1]['thought'] = thought
-
-        self.json_log[-1]['action_prompt'] = f"""
-Based on the previous thought, what should the next action be? Make sure to strictly follow the action format provided previously.
-
-Previous Thought:
-{thought}
-
-Give nothing but the action[parameters]. No dialogue before or after.
-
-These are the only possible actions. Make sure to only use these and nothing else.
-
-actions = ["FlightSearch", "GoogleDistanceMatrix", "AccommodationSearch", "RestaurantSearch", "AttractionSearch", "CitySearch", "NotebookWrite", "Planner"]
-
-Each action only calls one function once. Do not add any description in the action. Make sure an action runs successfully before calling NotebookWrite.
-
-**Action Options:**
-
-(1) **FlightSearch[Departure City, Destination City, Date]:**
-   - **Description:** Retrieve flight information.
-   - **Parameters:** 
-     - Departure City: The city you'll be flying out from.
-     - Destination City: The city you aim to reach.
-     - Date: The date of your travel in YYYY-MM-DD format.
-   - **Example:** FlightSearch[New York, London, 2022-10-01].
-
-(2) **GoogleDistanceMatrix[Origin, Destination, Mode]:**
-   - **Description:** Estimate the distance, time, and cost between two cities.
-   - **Parameters:** 
-     - Origin: The departure city of your journey.
-     - Destination: The destination city of your journey.
-     - Mode: The method of transportation ('self-driving' or 'taxi').
-   - **Example:** GoogleDistanceMatrix[Paris, Lyon, self-driving].
-
-(3) **AccommodationSearch[City]:**
-   - **Description:** Discover accommodations in a city.
-   - **Parameter:** 
-     - City: The city where you're seeking accommodation.
-   - **Example:** AccommodationSearch[Rome].
-
-(4) **RestaurantSearch[City]:**
-   - **Description:** Explore dining options in a city.
-   - **Parameter:** 
-     - City: The city where you're seeking restaurants.
-   - **Example:** RestaurantSearch[Tokyo].
-
-(5) **AttractionSearch[City]:**
-   - **Description:** Find attractions in a city.
-   - **Parameter:** 
-     - City: The city where you're seeking attractions.
-   - **Example:** AttractionSearch[London].
-
-(6) **CitySearch[State]:**
-   - **Description:** Find cities in a state.
-   - **Parameter:** 
-     - State: The state where you're seeking cities.
-   - **Example:** CitySearch[California].
-
-(7) **NotebookWrite[Short Description]:**
-   - **Description:** Write a new data entry into the Notebook tool with a short description. This tool should be used immediately after using any other information-gathering tool.
-   - **Parameters:** 
-     - Short Description: A brief description or label for the stored data.
-   - **Example:** NotebookWrite[Flights from Rome to Paris in 2022-02-01].
-
-(8) **Planner[Query]:**
-   - **Description:** Craft detailed plans based on user input and the information stored in the Notebook.
-   - **Parameters:** 
-     - Query: The user's query.
-   - **Example:** Planner[Give me a 3-day trip plan from Seattle to New York].
-
----
-"""
-
-
-        action = self.prompt_agent(message=self.json_log[-1]['action_prompt'])
+        action = self.prompt_agent(f"Give me action number {self.step_n} and that only (without extra dialogue) in the following example format:\n\nAction {self.step_n}: \nActionName[Required Information]\n")
         self.json_log[-1]['action'] = action
 
         if len(self.last_actions) > 0 and self.last_actions[-1] != action:
@@ -219,18 +124,11 @@ Each action only calls one function once. Do not add any description in the acti
             self.finished = True
             return
 
-        self.current_observation = "Observation: "
+        self.scratchpad = f'Observation {self.step_n}: '
         action_type, action_arg = self.parse_action(action)
         if action_type:
             self.handle_action(action_type, action_arg)
-            self.previousActions += [action]
-        else:
-            self.current_observation += "Error: Action not found. Please ensure it is a valid action and/or has correct formatting according to the rules."
-            self.json_log[-1]['state'] = "Error: Action not found. Please ensure it is a valid action and/or has correct formatting according to the rules."
         self.json_log[-1]['observation'] = self.current_observation
-
-        # self.prompt_agent(message="This is the result/observation of the action that you just performed. Please acknowledge its success or error and remember it for future steps:\n" + self.current_observation)
-
         self.step_n += 1
 
         if action_type == 'Planner' and self.retry_record['planner'] == 0:
@@ -239,14 +137,11 @@ Each action only calls one function once. Do not add any description in the acti
 
         self.llm.add_message('user', self.current_observation)
 
-        print(f"{self.current_observation=}")
-
         # print(self.llm.messages[-5:])
 
     def prompt_agent(self, message: str) -> str:
         """Prompt the agent with a message and return the response."""
-        self.llm.add_message("user",
-                             message)  # "\nImportant Information Stored in Notebook:" + str(self.tools['notebook'].list_all()) + "\nMake sure to look at the conversation history and Notebook to not repeat previous steps and double check accuracy before you give an answer to the following. If you successfully got information from an action, then make sure to always write it in the notebook. Only give me the following next step:\n" + message)
+        self.llm.add_message("user", message)#"\nImportant Information Stored in Notebook:" + str(self.tools['notebook'].list_all()) + "\nMake sure to look at the conversation history and Notebook to not repeat previous steps and double check accuracy before you give an answer to the following. If you successfully got information from an action, then make sure to always write it in the notebook. Only give me the following next step:\n" + message)        
         response = self.llm.send_query()
         return response['message']['content']
 
@@ -264,7 +159,7 @@ Each action only calls one function once. Do not add any description in the acti
         self.retry_record = {key: 0 for key in action_mapping.values()}
         self.retry_record['invalidAction'] = 0
         self.tools = self.load_tools(self.tools_list)
-        self.previousActions = []
+
 
     def load_tools(self, tools: List[str]) -> Dict[str, Any]:
         """Load the tools specified in the tools list."""
@@ -288,12 +183,14 @@ Each action only calls one function once. Do not add any description in the acti
             return match.group(1), match.group(2)
         return None, None
 
+
+
     def handle_action(self, action_type: str, action_arg: str):
         """Handle the action based on its type."""
         if action_type in action_mapping:
             try:
                 action_func = getattr(self, f'handle_{action_type.lower()}')
-                action_func(action_arg.replace(", ", ",").replace(",", ", "))
+                action_func(action_arg)
             except Exception as e:
                 self.current_observation = f'Error in {action_type}: {str(e)}'
                 self.json_log[-1]['state'] = 'Error'
@@ -361,7 +258,6 @@ Each action only calls one function once. Do not add any description in the acti
         self.current_observation = str(self.tools['planner'].run(str(self.tools['notebook'].list_all()), args))
         self.answer = self.current_observation
         self.json_log[-1]['state'] = 'Successful'
-
     def is_finished(self) -> bool:
         """Check if the agent has finished its process."""
         return self.finished
@@ -384,17 +280,12 @@ def to_string(data) -> str:
         return str(data)
     return "None"
 
-import time
+
 if __name__ == '__main__':
-
-    import cohere
-
-    co = cohere.Client("Qw7Hhr9nRPBRSfQzxCllAjS53DfEpWQzPQ3oSjkc")
-
     # Command-line argument parsing
     parser = argparse.ArgumentParser()
     parser.add_argument("--llama_url", default="http://localhost:11434/api/chat", type=str)
-    parser.add_argument("--model_name", default="l70", type=str)  # crp:latest
+    parser.add_argument("--model_name", default="l70", type=str) # crp:latest
     parser.add_argument("--output_dir", default="./output/", type=str)
     parser.add_argument("--stream", default=False, action='store_true')
     parser.add_argument("--set_type", default="validation", type=str)
@@ -406,7 +297,7 @@ if __name__ == '__main__':
                   "planner", "cities"]
 
     # Initialize the ReactAgent
-    agent = ReactAgent(args, mode='zero_shot', tools=tools_list, max_steps=30, max_retries=3,
+    agent = ReactAgent(args, mode='zero_shot', tools=tools_list, max_steps=15, max_retries=3,
                        illegal_early_stop_patience=3,
                        react_llm_name=args.model_name, planner_llm_name=args.model_name,
                        city_file_path='../database/background/citySet.txt',
@@ -418,7 +309,7 @@ if __name__ == '__main__':
 
     # Process each query in the dataset
     for number, data in enumerate(tqdm(dataset), start=1):
-        # if number > 1: continue
+        if number > 1: continue
         query = data['query']
         output_file = os.path.join(output_path, f'generated_plan_{number}.json')
 
@@ -442,6 +333,3 @@ if __name__ == '__main__':
         # Save the results to a file
         with open(output_file, 'w') as f:
             json.dump(result, f, indent=4)
-
-        # with open(f"./convo/conversation_{number}.json", 'w', encoding='utf-8') as f:
-        #     json.dump(agent.llm.messages, f, ensure_ascii=False, indent=4)
